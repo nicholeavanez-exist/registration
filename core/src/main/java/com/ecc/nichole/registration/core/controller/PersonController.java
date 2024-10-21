@@ -2,10 +2,13 @@ package com.ecc.nichole.registration.core.controller;
 
 
 import com.ecc.nichole.registration.core.model.ContactInformation;
-import com.ecc.nichole.registration.core.model.Person;
-import com.ecc.nichole.registration.core.model.Role;
-import com.ecc.nichole.registration.core.service.impl.PersonServiceImpl;
+import com.ecc.nichole.registration.core.model.dto.PersonDto;
+import com.ecc.nichole.registration.core.model.dto.RoleDto;
+import com.ecc.nichole.registration.core.service.PersonService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -23,74 +26,76 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/persons")
 public class PersonController {
 
     @Autowired
-    private PersonServiceImpl personServiceImpl;
+    private PersonService personService;
 
     @PostMapping
-    public ResponseEntity<String> create(@RequestBody Person person) {
-        personServiceImpl.create(person);
-        return ResponseEntity.ok("Successfully saved person.");
-    }
-
-    @GetMapping("/{id}")
-    public ResponseEntity<Optional<Person>> getById(@PathVariable Long id) {
-        return Optional.ofNullable(personServiceImpl.getById(id))
-            .map(ResponseEntity::ok)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Cannot retrieve non-existing person with ID " + id + "."));
+    public ResponseEntity<String> create(@RequestBody PersonDto personDto) {
+        personService.create(personDto);
+        return ResponseEntity.ok("Successfully saved person with UUID " + personDto.getUuid() + ".");
     }
 
     @GetMapping
-    public ResponseEntity<List<Person>> getAllPersons(
-        @RequestParam(name = "sortBy", defaultValue = "name.lastName") String sortBy,
-        @RequestParam(name = "order", defaultValue = "asc") String order) {
+    public ResponseEntity<List<PersonDto>> getAllPersons(
+            @RequestParam(name = "sortBy", defaultValue = "name.lastName") String sortBy,
+            @RequestParam(name = "order", defaultValue = "asc") String order,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
 
-        List<Person> persons = personServiceImpl.getAll(sortBy, order);
+        Pageable pageable = PageRequest.of(page, size);
+        List<PersonDto> persons = personService.getAll(sortBy, order, pageable);
         return ResponseEntity.ok(persons);
     }
 
-    @GetMapping("/{id}/roles")
-    public ResponseEntity<List<Role>> getAllRoles(@PathVariable Long id) {
-        return Optional.ofNullable(personServiceImpl.getAllRoles(id))
-            .map(ResponseEntity::ok)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Cannot retrieve any roles for person with ID " + id + "."));
+    @GetMapping("/{uuid}/roles")
+    public ResponseEntity<List<RoleDto>> getAllRoles(
+            @PathVariable UUID uuid,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+
+        Pageable pageable = PageRequest.of(page, size);
+        return Optional.ofNullable(personService.getAllRoles(uuid, pageable))
+                .map(ResponseEntity::ok)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Cannot retrieve any roles for person with ID " + uuid + "."));
     }
 
-    @PutMapping("/{id}")
-    public ResponseEntity<String> update(@PathVariable Long id, @RequestBody Person person) {
-        return Optional.ofNullable(personServiceImpl.update(id, person))
+    @PutMapping("/{uuid}")
+    public ResponseEntity<String> update(@PathVariable UUID uuid, @RequestBody PersonDto person) {
+        return Optional.ofNullable(personService.update(uuid, person))
             .map(updatedPerson -> ResponseEntity.ok("Person successfully updated."))
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Cannot update non-existing role with ID " + id + "."));
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Cannot update non-existing role with UUID " + uuid + "."));
     }
 
-    @PatchMapping("/{id}/contact")
-    public ResponseEntity<String> patchContactInformation(@PathVariable Long id, @RequestBody ContactInformation contactInformation) {
-        Optional<Person> updatedPerson = personServiceImpl.patchContactInformation(id, contactInformation);
+    @PatchMapping("/{uuid}/contact")
+    public ResponseEntity<String> patchContactInformation(@PathVariable UUID uuid, @RequestBody ContactInformation contactInformation) {
+        Optional<PersonDto> updatedPerson = personService.patchContactInformation(uuid, contactInformation);
 
         return updatedPerson
-            .map(person -> ResponseEntity.ok("Successfully patched contact information of person with ID " + id + "."))
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Cannot patch non-existing person with ID " + id + "."));
+            .map(person -> ResponseEntity.ok("Successfully patched contact information of person with UUID " + uuid + "."))
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Cannot patch non-existing person with UUID " + uuid + "."));
     }
 
-    @PatchMapping("/{id}/roles")
-    public ResponseEntity<String> patchRoles(@PathVariable Long id, @RequestBody List<Role> role) {
-        Optional<Person> updatedPerson = personServiceImpl.patchRoles(id, role);
+    @PatchMapping("/{uuid}/roles")
+    public ResponseEntity<String> patchRoles(@PathVariable UUID uuid, @RequestBody List<RoleDto> role) {
+        Optional<PersonDto> updatedPerson = personService.patchRoles(uuid, role);
 
         return updatedPerson
-            .map(person -> ResponseEntity.ok("Successfully patched roles of person with ID " + id + "."))
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Cannot patch non-existing person with ID " + id + "."));
+            .map(person -> ResponseEntity.ok("Successfully patched roles of person with UUID " + uuid + "."))
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Cannot patch non-existing person with UUID " + uuid + "."));
     }
 
-    @DeleteMapping("/{id}")
-    public ResponseEntity<String> delete(@PathVariable Long id) {
-        if (personServiceImpl.delete(id)) {
+    @DeleteMapping("/{uuid}")
+    public ResponseEntity<String> delete(@PathVariable UUID uuid) {
+        if (personService.delete(uuid)) {
             return ResponseEntity.ok("Person successfully deleted.");
         } else {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Cannot delete non-existing person with ID " + id + ".");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Cannot delete non-existing person with UUID " + uuid + ".");
         }
     }
 }

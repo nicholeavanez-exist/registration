@@ -1,7 +1,11 @@
 package com.ecc.nichole.registration.core.model;
 
 import jakarta.persistence.Embeddable;
+import lombok.Getter;
+import lombok.Setter;
 
+@Getter
+@Setter
 @Embeddable
 public class Address {
 
@@ -18,22 +22,6 @@ public class Address {
     }
 
     public Address() {}
-
-    public String getStreetNumber() {
-        return streetNumber;
-    }
-
-    public String getBarangay() {
-        return barangay;
-    }
-
-    public String getCity() {
-        return city;
-    }
-
-    public int getZipcode() {
-        return zipcode;
-    }
 
     public static class Builder {
         private String streetNumber;

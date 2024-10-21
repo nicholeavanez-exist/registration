@@ -2,7 +2,11 @@ package com.ecc.nichole.registration.core.model;
 
 import jakarta.persistence.Embeddable;
 import jakarta.validation.constraints.NotNull;
+import lombok.Getter;
+import lombok.Setter;
 
+@Getter
+@Setter
 @Embeddable
 public class Name {
 
@@ -25,26 +29,6 @@ public class Name {
     }
 
     public Name() {}
-
-    public String getLastName() {
-        return lastName;
-    }
-
-    public String getFirstName() {
-        return firstName;
-    }
-
-    public String getMiddleName() {
-        return middleName;
-    }
-
-    public String getSuffix() {
-        return suffix;
-    }
-
-    public String getTitle() {
-        return title;
-    }
 
     public static class Builder {
         private String lastName;

@@ -3,13 +3,20 @@ package com.ecc.nichole.registration.core.service.impl;
 import com.ecc.nichole.registration.core.model.ContactInformation;
 import com.ecc.nichole.registration.core.model.Person;
 import com.ecc.nichole.registration.core.model.Role;
+import com.ecc.nichole.registration.core.model.dto.PersonDto;
+import com.ecc.nichole.registration.core.model.dto.RoleDto;
 import com.ecc.nichole.registration.core.repo.PersonRepository;
 import com.ecc.nichole.registration.core.repo.RoleRepository;
-import com.ecc.nichole.registration.core.service.interfaces.PersonService;
+import com.ecc.nichole.registration.core.service.PersonService;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -26,31 +33,45 @@ public class PersonServiceImpl implements PersonService {
     private RoleRepository roleRepository;
 
     @Override
-    public void create(Person person) {
-        personRepository.save(person);
+    @PreAuthorize("hasRole('ADMIN')")
+    public void create(PersonDto person) {
+        personRepository.save(fromDto(person));
     }
 
     @Override
-    public Optional<Person> getById(Long id) {
-        return personRepository.findById(id);
+    @PreAuthorize("hasAnyRole('ADMIN', 'VIEWER')")
+    public Optional<PersonDto> getByUuid(UUID uuid) {
+        return Optional.ofNullable(toDto(personRepository.findByUuid(uuid).orElse(null)));
     }
 
     @Override
-    public List<Person> getAll(String sortBy, String orderBy) {
+    @PreAuthorize("hasAnyRole('ADMIN', 'VIEWER')")
+    public List<PersonDto> getAll(String sortBy, String orderBy, Pageable pageable) {
         Sort sort = Sort.by(Sort.Direction.fromString(orderBy), sortBy);
-        return personRepository.findAll(sort);
+        pageable = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sort);
+
+        return personRepository.findAll(pageable)
+            .map(this::toDto)
+            .stream().collect(Collectors.toList());
     }
 
     @Override
-    public List<Role> getAllRoles(Long id) {
-        return personRepository.findById(id)
-            .map(person -> new ArrayList<>(person.getRoles()))
-            .orElseThrow(() -> new EntityNotFoundException("Cannot retrieve non-existing person with ID " + id + "."));
+    @PreAuthorize("hasAnyRole('ADMIN', 'VIEWER')")
+    public List<RoleDto> getAllRoles(UUID uuid, Pageable pageable) {
+        PersonDto person = toDto(
+            personRepository.findByUuid(uuid)
+                .orElseThrow(() -> new EntityNotFoundException("Cannot retrieve non-existing person with ID " + uuid + "."))
+        );
+
+        return person.getRoles().stream()
+            .map(role -> new RoleServiceImpl().toDto(role))
+            .collect(Collectors.toList());
     }
 
     @Override
-    public Optional<Person> patchContactInformation(Long id, ContactInformation updatedContactInformation) {
-        return personRepository.findById(id)
+    @PreAuthorize("hasRole('ADMIN')")
+    public Optional<PersonDto> patchContactInformation(UUID uuid, ContactInformation updatedContactInformation) {
+        return personRepository.findByUuid(uuid)
             .map(existingPerson -> {
                 ContactInformation currentContactInformation = existingPerson.getContactInformation();
 
@@ -65,15 +86,17 @@ public class PersonServiceImpl implements PersonService {
                     .build();
 
                 return personRepository.save(updatedPerson);
-            });
+            })
+            .map(this::toDto);
     }
 
     @Override
-    public Optional<Person> patchRoles(Long id, List<Role> updatedRoles) {
-        return personRepository.findById(id)
+    @PreAuthorize("hasRole('ADMIN')")
+    public Optional<PersonDto> patchRoles(UUID uuid, List<RoleDto> updatedRoles) {
+        return personRepository.findByUuid(uuid)
             .map(existingPerson -> {
                 Set<Long> roleIds = updatedRoles.stream()
-                    .map(Role::getId)
+                    .map(RoleDto::getId)
                     .collect(Collectors.toSet());
 
                 Set<Role> validRoles = new HashSet<>(roleRepository.findAllById(roleIds));
@@ -93,13 +116,14 @@ public class PersonServiceImpl implements PersonService {
                     .roles(validRoles)
                     .build();
 
-                return personRepository.save(updatedPerson);
+                return toDto(personRepository.save(updatedPerson));
             });
     }
 
     @Override
-    public Optional<Person> update(Long id, Person updatedPerson) {
-        return personRepository.findById(id)
+    @PreAuthorize("hasRole('ADMIN')")
+    public Optional<PersonDto> update(UUID uuid, PersonDto updatedPerson) {
+        return personRepository.findByUuid(uuid)
             .map(existingPerson -> {
                 existingPerson.setName(updatedPerson.getName());
                 existingPerson.setAddress(updatedPerson.getAddress());
@@ -110,22 +134,75 @@ public class PersonServiceImpl implements PersonService {
                 existingPerson.setContactInformation(updatedPerson.getContactInformation());
 
                 Set<Role> updatedRoles = updatedPerson.getRoles().stream()
-                        .map(role -> roleRepository.findById(role.getId())
-                                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Role ID " + role.getId() + " does not exist.")))
-                        .collect(Collectors.toSet());
+                    .map(role -> roleRepository.findByUuid(role.getUuid())
+                            .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Role ID " + role.getUuid() + " does not exist.")))
+                    .collect(Collectors.toSet());
 
                 existingPerson.setRoles(updatedRoles);
 
-                return personRepository.save(existingPerson);
+                return toDto(personRepository.save(existingPerson));
             });
     }
 
     @Override
-    public boolean delete(Long id) {
-        if (personRepository.existsById(id)) {
-            personRepository.deleteById(id);
+    @PreAuthorize("hasRole('ADMIN')")
+    public boolean delete(UUID uuid) {
+        if (personRepository.existsByUuid(uuid)) {
+            personRepository.deleteByUuid(uuid);
             return true;
         }
         return false;
+    }
+
+    public PersonDto toDto(Person person) {
+        if (person == null) {
+            return null;
+        }
+
+        return new PersonDto(
+            person.getId(),
+            person.getUuid(),
+            person.getName(),
+            person.getAddress(),
+            person.getBirthDate(),
+            person.getGwa(),
+            person.getHireDate(),
+            person.isEmployed(),
+            person.getContactInformation(),
+            person.getRoles(),
+            person.getCreatedAt(),
+            person.getUpdatedAt()
+        );
+    }
+
+    public Person fromDto(PersonDto personDto) {
+        if (personDto == null) {
+            return null;
+        }
+
+        Person person = new Person();
+        person.setId(personDto.getId());
+
+        if (personDto.getUuid() != null) {
+            person.setUuid(personDto.getUuid());
+        }
+
+        person.setName(personDto.getName());
+        person.setAddress(personDto.getAddress());
+        person.setBirthDate(personDto.getBirthDate());
+        person.setGwa(personDto.getGwa());
+        person.setHireDate(personDto.getHireDate());
+        person.setEmployed(personDto.isEmployed());
+        person.setContactInformation(personDto.getContactInformation());
+        person.setRoles(personDto.getRoles());
+
+        if (personDto.getCreatedAt() != null) {
+            person.setCreatedAt(personDto.getCreatedAt());
+        }
+
+        if (personDto.getUpdatedAt() != null) {
+            person.setUpdatedAt(personDto.getUpdatedAt());
+        }
+        return person;
     }
 }
